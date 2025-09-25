@@ -4,6 +4,11 @@ extends EditorPlugin
 
 signal dialog_closed(canceled: bool)
 
+enum UpdateMode {
+	UPDATE_CONTINUOUS,
+	UPDATE_DISCRETE,
+	UPDATE_CAPTURE
+}
 
 enum WrapMode {
 	WARP_MODE_CLAMP,
@@ -33,6 +38,7 @@ const _PLUGIN_NAME: String = "All Tracks Modifier..."
 var _dialog: ConfirmationDialog
 var _dialog_loop_option: OptionButton
 var _dialog_interpolation_option: OptionButton
+var _dialog_update_option: OptionButton
 var _dialog_pos3d: CheckBox
 var _dialog_rot3d: CheckBox
 var _dialog_scl3d: CheckBox
@@ -68,6 +74,10 @@ func _make_dialog() -> void:
 	_dialog_interpolation_option.add_icon_item(EditorInterface.get_base_control().get_theme_icon("InterpRaw", "EditorIcons"), "Nearest", InterpolationType.INTERPOLATION_TYPE_NEAREST)
 	_dialog_interpolation_option.add_icon_item(EditorInterface.get_base_control().get_theme_icon("InterpLinear", "EditorIcons"), "Linear", InterpolationType.INTERPOLATION_TYPE_LINEAR)
 	_dialog_interpolation_option.add_icon_item(EditorInterface.get_base_control().get_theme_icon("InterpCubic", "EditorIcons"), "Cubic", InterpolationType.INTERPOLATION_TYPE_CUBIC)
+	_dialog_update_option = OptionButton.new()
+	_dialog_update_option.add_icon_item(EditorInterface.get_base_control().get_theme_icon("TrackContinuous", "EditorIcons"), "Continuous", UpdateMode.UPDATE_CONTINUOUS)
+	_dialog_update_option.add_icon_item(EditorInterface.get_base_control().get_theme_icon("TrackDiscrete", "EditorIcons"), "Discrete", UpdateMode.UPDATE_DISCRETE)
+	_dialog_update_option.add_icon_item(EditorInterface.get_base_control().get_theme_icon("TrackCapture", "EditorIcons"), "Capture", UpdateMode.UPDATE_CAPTURE)
 	_dialog_pos3d = CheckBox.new()
 	_dialog_pos3d.button_pressed = true
 	_dialog_rot3d = CheckBox.new()
@@ -83,6 +93,7 @@ func _make_dialog() -> void:
 	# Set default values.
 	_dialog_loop_option.select(WrapMode.WARP_MODE_CLAMP)
 	_dialog_interpolation_option.select(InterpolationType.INTERPOLATION_TYPE_LINEAR)
+	_dialog_update_option.select(UpdateMode.UPDATE_CONTINUOUS)
 
 	# Add child GUI elements.
 	grid.columns = 2
@@ -92,6 +103,8 @@ func _make_dialog() -> void:
 	grid.add_child(_dialog_loop_option, false, InternalMode.INTERNAL_MODE_BACK)
 	grid.add_child(_make_label("Interpolation Type"), false, InternalMode.INTERNAL_MODE_BACK)
 	grid.add_child(_dialog_interpolation_option, false, InternalMode.INTERNAL_MODE_BACK)
+	grid.add_child(_make_label("Update Type"), false, InternalMode.INTERNAL_MODE_BACK)
+	grid.add_child(_dialog_update_option, false, InternalMode.INTERNAL_MODE_BACK)
 	grid.add_child(_make_label("-- Target Track Type --"), false, InternalMode.INTERNAL_MODE_BACK)
 	grid.add_child(HSeparator.new(), false, InternalMode.INTERNAL_MODE_BACK)
 	grid.add_child(_make_label("3D Position"), false, InternalMode.INTERNAL_MODE_BACK)
@@ -141,6 +154,14 @@ func _main() -> void:
 			intrp_type = Animation.InterpolationType.INTERPOLATION_LINEAR
 		InterpolationType.INTERPOLATION_TYPE_CUBIC:
 			intrp_type = Animation.InterpolationType.INTERPOLATION_CUBIC
+	var update_type: Animation.UpdateMode = Animation.UpdateMode.UPDATE_CONTINUOUS
+	match _dialog_update_option.get_selected_id():
+		UpdateMode.UPDATE_CONTINUOUS:
+			update_type = Animation.UpdateMode.UPDATE_CONTINUOUS
+		UpdateMode.UPDATE_CAPTURE:
+			update_type = Animation.UpdateMode.UPDATE_CAPTURE
+		UpdateMode.UPDATE_DISCRETE:
+			update_type = Animation.UpdateMode.UPDATE_DISCRETE
 
 	var filter: int = 0
 	if _dialog_pos3d.button_pressed:
@@ -177,9 +198,14 @@ func _main() -> void:
 			Animation.TrackType.TYPE_VALUE:
 				if !(filter & TypeFilter.TYPE_FILTER_VAL):
 					continue
+		
 		ur.add_undo_method(selected_animation_ref, "track_set_interpolation_loop_wrap", i, selected_animation_ref.track_get_interpolation_loop_wrap(i))
 		ur.add_undo_method(selected_animation_ref, "track_set_interpolation_type", i, selected_animation_ref.track_get_interpolation_type(i))
 		ur.add_do_method(selected_animation_ref, "track_set_interpolation_loop_wrap", i, is_loop)
 		ur.add_do_method(selected_animation_ref, "track_set_interpolation_type", i, intrp_type)
+		if selected_animation_ref.track_get_type(i) == Animation.TrackType.TYPE_VALUE: #Method returns an error on non-value tracks.
+			ur.add_undo_method(selected_animation_ref, "value_track_set_update_mode", i, selected_animation_ref.value_track_get_update_mode(i))
+			ur.add_do_method(selected_animation_ref, "value_track_set_update_mode", i, update_type)
+			
 	ur.commit_action()
 	print("AllTracksModifier: Process completed.")
